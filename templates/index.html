@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sales Forecasting Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      body {
+        font-family: Arial, sans-serif;
+        background-color: #f4f6f9;
+        color: #333;
+        margin: 0;
+        padding: 0;
+      }
+      .container {
+        max-width: 800px;
+        margin: auto;
+        padding: 20px;
+      }
+      h1 {
+        text-align: center;
+        color: #444;
+      }
+      #forecastForm {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        margin-bottom: 20px;
+      }
+      input[type="file"],
+      button {
+        padding: 10px;
+        font-size: 16px;
+        margin: 5px;
+        cursor: pointer;
+      }
+      .results-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+      }
+      .chart-container {
+        width: 100%;
+        margin-top: 20px;
+      }
+      .forecast-summary {
+        display: flex;
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 20px;
+        margin-top: 20px;
+      }
+      .forecast-card {
+        background-color: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        padding: 15px;
+        width: 200px;
+        text-align: center;
+        position: relative;
+      }
+      .forecast-card h3 {
+        margin: 0;
+        font-size: 18px;
+        color: #555;
+      }
+      .forecast-card .preview,
+      .forecast-card .full {
+        font-size: 14px;
+        color: #888;
+        margin: 10px 0;
+      }
+      .forecast-card .full {
+        display: none;
+      }
+      .forecast-card button {
+        background-color: #007bff;
+        color: white;
+        border: none;
+        border-radius: 5px;
+        padding: 5px 10px;
+        cursor: pointer;
+        font-size: 14px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Sales Forecasting Dashboard</h1>
+
+      <form id="forecastForm" enctype="multipart/form-data">
+        <input type="file" id="fileInput" name="file" accept=".csv" required />
+        <button type="submit">Upload and Forecast</button>
+      </form>
+
+      <div id="result" style="display: none">
+        <div class="results-container">
+          <h2>Forecast Summary</h2>
+          <div class="forecast-summary" id="forecastSummary"></div>
+          <div class="chart-container">
+            <canvas id="forecastChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      document.getElementById("forecastForm").onsubmit = async function (
+        event
+      ) {
+        event.preventDefault();
+        const formData = new FormData();
+        formData.append("file", document.getElementById("fileInput").files[0]);
+
+        try {
+          const response = await fetch("/upload", {
+            method: "POST",
+            body: formData,
+          });
+          const data = await response.json();
+
+          if (data.error) {
+            alert(data.error);
+          } else {
+            displayResults(data);
+          }
+        } catch (error) {
+          console.error("Error:", error);
+        }
+      };
+
+      function displayResults(data) {
+        document.getElementById("result").style.display = "block";
+        const forecastSummaryDiv = document.getElementById("forecastSummary");
+        forecastSummaryDiv.innerHTML = ""; // Clear previous results
+
+        // Create forecast summary cards with expand/collapse functionality
+        for (const [model, predictions] of Object.entries(data)) {
+          const forecastCard = document.createElement("div");
+          forecastCard.className = "forecast-card";
+
+          const modelTitle = document.createElement("h3");
+          modelTitle.innerText = model;
+          forecastCard.appendChild(modelTitle);
+
+          const previewText = document.createElement("p");
+          previewText.className = "preview";
+          previewText.innerText = `Predicted Sales (Preview): ${predictions
+            .slice(0, 3)
+            .join(", ")}...`;
+          forecastCard.appendChild(previewText);
+
+          const fullText = document.createElement("p");
+          fullText.className = "full";
+          fullText.innerText = `Full Prediction: ${predictions.join(", ")}`;
+          forecastCard.appendChild(fullText);
+
+          const toggleButton = document.createElement("button");
+          toggleButton.innerText = "Expand";
+          toggleButton.onclick = function () {
+            if (fullText.style.display === "none") {
+              fullText.style.display = "block";
+              previewText.style.display = "none";
+              toggleButton.innerText = "Collapse";
+            } else {
+              fullText.style.display = "none";
+              previewText.style.display = "block";
+              toggleButton.innerText = "Expand";
+            }
+          };
+          forecastCard.appendChild(toggleButton);
+
+          forecastSummaryDiv.appendChild(forecastCard);
+        }
+
+        // Generate forecast graph
+        const labels = Array.from(
+          { length: data.Seasonal_Naive.length },
+          (_, i) => `Day ${i + 1}`
+        );
+        const datasets = [
+          {
+            label: "Seasonal Naive",
+            data: data.Seasonal_Naive,
+            borderColor: "rgba(75, 192, 192, 1)",
+            fill: false,
+          },
+          {
+            label: "Holt-Winters",
+            data: data.Holt_Winters,
+            borderColor: "rgba(255, 159, 64, 1)",
+            fill: false,
+          },
+          {
+            label: "SARIMA",
+            data: data.SARIMA,
+            borderColor: "rgba(153, 102, 255, 1)",
+            fill: false,
+          },
+          {
+            label: "Linear Regression",
+            data: data.Linear_Regression,
+            borderColor: "rgba(255, 99, 132, 1)",
+            fill: false,
+          },
+        ];
+
+        const ctx = document.getElementById("forecastChart").getContext("2d");
+        new Chart(ctx, {
+          type: "line",
+          data: {
+            labels: labels,
+            datasets: datasets,
+          },
+          options: {
+            responsive: true,
+            plugins: {
+              legend: {
+                position: "top",
+              },
+              title: {
+                display: true,
+                text: "Sales Forecasts by Different Models",
+              },
+            },
+            scales: {
+              x: { title: { display: true, text: "Forecast Day" } },
+              y: { title: { display: true, text: "Sales" } },
+            },
+          },
+        });
+      }
+    </script>
+  </body>
+</html>
